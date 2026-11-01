@@ -1,0 +1,97 @@
+name: Build Mi Cine APK from uploaded ZIP
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Descargar repositorio
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Extraer el proyecto completo
+        run: |
+          if [ -f Mi-Cine-proyecto-descarga.zip ]; then
+            ZIP_FILE="Mi-Cine-proyecto-descarga.zip"
+          elif [ -f Mi-Cine-proyecto.zip ]; then
+            ZIP_FILE="Mi-Cine-proyecto.zip"
+          else
+            echo "No se encontró el ZIP de Mi Cine"
+            exit 1
+          fi
+          unzip -q "$ZIP_FILE" -d .mi-cine-extracted
+          test -d .mi-cine-extracted/mi-cine
+          cp -a .mi-cine-extracted/mi-cine/. .
+          rm -rf .mi-cine-extracted "$ZIP_FILE"
+
+      - name: Guardar el proyecto en GitHub
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if ! git diff --cached --quiet; then
+            git commit -m "Add complete Mi Cine Android project"
+            git push origin "HEAD:${GITHUB_REF_NAME}"
+          fi
+
+      - name: Configurar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Configurar Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Configurar Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Instalar dependencias
+        run: npm install --no-audit --no-fund
+
+      - name: Verificar y construir aplicación web
+        run: |
+          npm run check
+          npm run build
+
+      - name: Crear proyecto Android
+        run: npx cap add android
+
+      - name: Actualizar versión
+        run: python3 scripts/set-android-version.py
+
+      - name: Configurar Python para iconos
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Generar iconos Android
+        run: |
+          python -m pip install --quiet pillow
+          python scripts/generate-android-icons.py
+          npx cap sync android
+
+      - name: Restaurar firma de Mi Cine
+        run: |
+          mkdir -p ~/.android
+          cp signing/mi-cine-debug.keystore ~/.android/debug.keystore
+
+      - name: Compilar APK
+        working-directory: android
+        run: ./gradlew --no-daemon assembleDebug
+
+      - name: Entregar APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Mi-Cine-Android-APK
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 30
