@@ -2,6 +2,9 @@ name: Build Mi Cine APK from uploaded ZIP
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - main
 
 permissions:
   contents: write
